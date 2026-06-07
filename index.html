@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>bylzzz garage — BLE Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep:    #0a0c0f;
+    --bg-card:    #111418;
+    --bg-card2:   #161a1f;
+    --border:     rgba(255,255,255,0.07);
+    --border-hi:  rgba(99,177,255,0.35);
+    --text-1:     #e8edf2;
+    --text-2:     #7a8899;
+    --text-3:     #4a5568;
+    --accent:     #63b1ff;
+    --accent-dim: rgba(99,177,255,0.12);
+    --green:      #34d399;
+    --orange:     #fbbf24;
+    --red:        #f87171;
+    --mono:       'Space Mono', monospace;
+    --sans:       'Sora', sans-serif;
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg-deep);
+    color: var(--text-1);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── BACKGROUND ── */
+  .bg-canvas {
+    position: fixed; inset: 0; z-index: 0;
+    overflow: hidden; pointer-events: none;
+  }
+
+  /* Radial glow */
+  .bg-canvas::before {
+    content: '';
+    position: absolute;
+    top: -120px; left: 50%; transform: translateX(-50%);
+    width: 700px; height: 500px;
+    background: radial-gradient(ellipse at center, rgba(99,177,255,0.08) 0%, transparent 70%);
+    animation: breathe 6s ease-in-out infinite;
+  }
+  .bg-canvas::after {
+    content: '';
+    position: absolute;
+    bottom: -100px; right: -100px;
+    width: 500px; height: 500px;
+    background: radial-gradient(ellipse at center, rgba(52,211,153,0.05) 0%, transparent 65%);
+    animation: breathe 8s ease-in-out 2s infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+    50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+  }
+
+  /* SVG grid lines */
+  .bg-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse 80% 80% at 50% 0%, black 30%, transparent 100%);
+  }
+
+  /* Scan line sweep */
+  .scan-line {
+    position: absolute; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(99,177,255,0.3), transparent);
+    animation: scan 8s linear infinite;
+    opacity: 0;
+  }
+  @keyframes scan {
+    0%   { top: -1px; opacity: 0; }
+    5%   { opacity: 1; }
+    95%  { opacity: 0.6; }
+    100% { top: 100vh; opacity: 0; }
+  }
+
+  /* Floating particles */
+  .particle {
+    position: absolute;
+    width: 2px; height: 2px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+    animation: float-up linear infinite;
+  }
+  @keyframes float-up {
+    0%   { transform: translateY(0) scale(1); opacity: 0; }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.2; }
+    100% { transform: translateY(-60vh) scale(0); opacity: 0; }
+  }
+
+  /* ── LAYOUT ── */
+  .app {
+    position: relative; z-index: 1;
+    max-width: 540px; margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .brand {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .brand-name {
+    font-family: var(--mono);
+    font-size: 20px; font-weight: 700; letter-spacing: -0.5px;
+    color: var(--text-1);
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .brand-name em {
+    font-style: normal; color: var(--accent);
+  }
+  .brand-sub {
+    font-size: 11px; color: var(--text-3);
+    font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+  }
+
+  .ble-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    user-select: none;
+  }
+  .ble-badge:hover {
+    border-color: var(--border-hi);
+    background: var(--bg-card2);
+  }
+  .ble-badge.connected { border-color: rgba(52,211,153,0.4); }
+  .ble-badge.scanning  { border-color: rgba(251,191,36,0.4); }
+
+  .ble-icon {
+    position: relative; width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ble-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-3);
+    transition: background 0.3s;
+    position: relative; z-index: 1;
+  }
+  .ble-dot.connected { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.7); }
+  .ble-dot.scanning  { background: var(--orange); animation: blink 0.5s infinite; }
+  .ble-ring {
+    position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid transparent;
+    transition: border-color 0.3s;
+  }
+  .ble-dot.connected ~ .ble-ring { border-color: rgba(52,211,153,0.3); animation: ping 1.5s ease-out infinite; }
+  @keyframes ping {
+    0%   { transform: scale(1); opacity: 1; }
+    100% { transform: scale(2); opacity: 0; }
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+  .ble-text { font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+
+  /* ── STATUS CARD ── */
+  .status-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    position: relative; overflow: hidden;
+  }
+  .status-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.4;
+  }
+  .status-field label {
+    display: block;
+    font-size: 10px; font-family: var(--mono); letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-3);
+    margin-bottom: 3px;
+  }
+  .status-value {
+    font-size: 13px; font-weight: 500; color: var(--text-1);
+    font-family: var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .status-value.dim { color: var(--text-3); }
+  .status-value.active { color: var(--accent); }
+
+  /* ── SECTION TITLE ── */
+  .section-title {
+    display: flex; align-items: center; gap: 10px;
+    margin: 20px 0 10px;
+    font-size: 10px; font-family: var(--mono); letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-3);
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px;
+    background: var(--border);
+  }
+
+  /* ── MODE GRID ── */
+  .mode-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+  }
+
+  .mode-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 11px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    text-align: left;
+    position: relative; overflow: hidden;
+  }
+  .mode-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(99,177,255,0.04), transparent);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .mode-btn:hover { border-color: rgba(99,177,255,0.2); background: var(--bg-card2); }
+  .mode-btn:hover::before { opacity: 1; }
+  .mode-btn:active { transform: scale(0.98); }
+  .mode-btn.active {
+    border-color: var(--accent);
+    background: rgba(99,177,255,0.08);
+    box-shadow: 0 0 0 1px rgba(99,177,255,0.15), inset 0 0 20px rgba(99,177,255,0.05);
+  }
+  .mode-btn.active::before { opacity: 1; }
+
+  .mode-icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-2);
+    transition: background 0.15s, color 0.15s;
+  }
+  .mode-btn.active .mode-icon {
+    background: rgba(99,177,255,0.15);
+    color: var(--accent);
+    box-shadow: 0 0 8px rgba(99,177,255,0.2);
+  }
+  .mode-info { overflow: hidden; flex: 1; }
+  .mode-name {
+    font-size: 12.5px; font-weight: 500; color: var(--text-1);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mode-btn.active .mode-name { color: var(--accent); }
+  .mode-desc {
+    font-size: 10.5px; color: var(--text-3); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--mono);
+  }
+  .mode-num {
+    font-size: 10px; font-family: var(--mono); color: var(--text-3);
+    flex-shrink: 0; align-self: flex-start; margin-top: 1px;
+    opacity: 0.5;
+  }
+  .mode-btn.active .mode-num { color: var(--accent); opacity: 0.7; }
+
+  /* ── SEND BUTTON ── */
+  .send-wrap {
+    position: sticky; bottom: 0; z-index: 10;
+    padding: 12px 0 0;
+    background: linear-gradient(to top, var(--bg-deep) 60%, transparent);
+  }
+  .send-btn {
+    width: 100%; padding: 14px;
+    background: var(--accent); color: #0a0c0f;
+    border: none; border-radius: 12px;
+    font-size: 14px; font-weight: 600; font-family: var(--mono);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    letter-spacing: 0.02em;
+    box-shadow: 0 4px 20px rgba(99,177,255,0.2);
+  }
+  .send-btn:hover:not(:disabled) {
+    background: #88c8ff;
+    box-shadow: 0 4px 28px rgba(99,177,255,0.35);
+    transform: translateY(-1px);
+  }
+  .send-btn:active:not(:disabled) { transform: scale(0.99); }
+  .send-btn:disabled {
+    background: var(--bg-card2);
+    color: var(--text-3);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .send-btn.sending {
+    background: var(--green);
+    box-shadow: 0 4px 20px rgba(52,211,153,0.3);
+    color: #0a0c0f;
+  }
+  .send-btn .btn-icon { font-size: 16px; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(8px);
+    background: var(--bg-card2);
+    border: 1px solid var(--border);
+    color: var(--text-1);
+    font-size: 12px; font-family: var(--mono);
+    padding: 8px 18px; border-radius: 100px;
+    opacity: 0; transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none; white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 100;
+  }
+  .toast.show {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── SIGNAL BADGE ── */
+  .signal-bars {
+    display: flex; align-items: flex-end; gap: 2px; height: 14px;
+  }
+  .signal-bars span {
+    width: 3px; border-radius: 1px; background: var(--text-3);
+    transition: background 0.3s;
+  }
+  .signal-bars span:nth-child(1) { height: 4px; }
+  .signal-bars span:nth-child(2) { height: 7px; }
+  .signal-bars span:nth-child(3) { height: 10px; }
+  .signal-bars span:nth-child(4) { height: 14px; }
+  .signal-bars.connected span { background: var(--green); }
+  .signal-bars.connected span:nth-child(4) { animation: signal-pulse 1.5s ease-in-out infinite; }
+  @keyframes signal-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+</style>
+</head>
+<body>
+
+<!-- Background effects -->
+<div class="bg-canvas">
+  <div class="bg-grid"></div>
+  <div class="scan-line"></div>
+  <!-- Particles injected by JS -->
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-name">bylzzz <em>garage</em></div>
+      <div class="brand-sub">BLE Flash Controller · 31 modes</div>
+    </div>
+    <div class="ble-badge" id="bleBadge" onclick="toggleBle()">
+      <div class="ble-icon">
+        <div class="ble-dot" id="bleDot"></div>
+        <div class="ble-ring"></div>
+      </div>
+      <div class="signal-bars" id="signalBars">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <span class="ble-text" id="bleText">Hubungkan</span>
+    </div>
+  </header>
+
+  <!-- Status -->
+  <div class="status-card">
+    <div class="status-field">
+      <label>Mode aktif</label>
+      <div class="status-value dim" id="activeModeLabel">—</div>
+    </div>
+    <div class="status-field">
+      <label>Perangkat</label>
+      <div class="status-value dim" id="deviceLabel">Tidak terhubung</div>
+    </div>
+  </div>
+
+  <!-- Mode Sections -->
+  <div id="modePanel">
+    <div class="section-title">Mode kedip · 01 – 11</div>
+    <div class="mode-grid" id="grid1"></div>
+
+    <div class="section-title">PWM &amp; Efek · 12 – 21</div>
+    <div class="mode-grid" id="grid2"></div>
+
+    <div class="section-title">Mode lanjutan · 22 – 31</div>
+    <div class="mode-grid" id="grid3"></div>
+  </div>
+
+  <!-- Send -->
+  <div class="send-wrap">
+    <button class="send-btn" id="sendBtn" disabled onclick="sendMode()">
+      <i class="ti ti-bolt btn-icon" aria-hidden="true"></i>
+      <span id="sendLabel">Pilih mode dulu</span>
+    </button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const MODES = [
+  {id:1,  name:"Normal",        desc:"Kedip 500ms",        icon:"ti-bulb"},
+  {id:2,  name:"Slow",          desc:"Kedip 800ms",        icon:"ti-clock"},
+  {id:3,  name:"Fast",          desc:"Kedip 250ms",        icon:"ti-player-skip-forward"},
+  {id:4,  name:"Triple",        desc:"3× kedip + jeda",    icon:"ti-dots"},
+  {id:5,  name:"Quad",          desc:"4× kedip + jeda",    icon:"ti-layout-grid"},
+  {id:6,  name:"Strobe",        desc:"Strobe 50ms",        icon:"ti-brand-strapi"},
+  {id:7,  name:"Pulse",         desc:"Nadi pendek",        icon:"ti-heartbeat"},
+  {id:8,  name:"Heartbeat",     desc:"Dub-dub",            icon:"ti-heart"},
+  {id:9,  name:"Hazard fast",   desc:"Hazard cepat",       icon:"ti-alert-triangle"},
+  {id:10, name:"Hazard slow",   desc:"Hazard lambat",      icon:"ti-alert-circle"},
+  {id:11, name:"Breathing",     desc:"Fade out + jeda",    icon:"ti-wave-square"},
+  {id:12, name:"Breath in",     desc:"Fade in + jeda",     icon:"ti-arrow-up"},
+  {id:13, name:"Breath sine",   desc:"Sinus halus",        icon:"ti-wave-sine"},
+  {id:14, name:"Candle",        desc:"Flicker lilin",      icon:"ti-flame"},
+  {id:15, name:"Lightning",     desc:"Kilat acak",         icon:"ti-bolt"},
+  {id:16, name:"Fade on-off",   desc:"Triangle wave",      icon:"ti-triangle"},
+  {id:17, name:"Wig-wag",       desc:"Terang/redup ganti", icon:"ti-arrows-exchange"},
+  {id:18, name:"SOS",           desc:"Morse SOS",          icon:"ti-sos"},
+  {id:19, name:"Police",        desc:"Siren 3× cepat",     icon:"ti-steering-wheel"},
+  {id:20, name:"Fade strobe",   desc:"Strobe + fade amp",  icon:"ti-adjustments-horizontal"},
+  {id:21, name:"Cascade up",    desc:"Ramp naik reset",    icon:"ti-trending-up"},
+  {id:22, name:"Cascade down",  desc:"Ramp turun reset",   icon:"ti-trending-down"},
+  {id:23, name:"Double pulse",  desc:"2 nadi + jeda",      icon:"ti-circles"},
+  {id:24, name:"Bounce",        desc:"Memantul fisika",    icon:"ti-bounce-right"},
+  {id:25, name:"Sawtooth up",   desc:"Gergaji naik",       icon:"ti-chart-line"},
+  {id:26, name:"Sawtooth down", desc:"Gergaji turun",      icon:"ti-chart-line"},
+  {id:27, name:"Twinkle",       desc:"Bintang acak",       icon:"ti-sparkles"},
+  {id:28, name:"Morse HELP",    desc:"Sinyal HELP",        icon:"ti-help"},
+  {id:29, name:"Zen",           desc:"Sangat lambat",      icon:"ti-zzz"},
+  {id:30, name:"Random burst",  desc:"Acak total",         icon:"ti-dice"},
+  {id:31, name:"Campfire",      desc:"Api unggun",         icon:"ti-campfire"},
+];
+
+const SERVICE_UUID        = "12345678-1234-1234-1234-123456789abc";
+const CHARACTERISTIC_UUID = "abcd1234-5678-90ab-cdef-123456789abc";
+
+let selectedMode = null;
+let bleDevice    = null;
+let bleChar      = null;
+let connected    = false;
+
+// ── Particles
+function spawnParticles() {
+  const canvas = document.querySelector('.bg-canvas');
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.cssText = `
+      left: ${Math.random() * 100}%;
+      bottom: ${Math.random() * 20}%;
+      animation-duration: ${8 + Math.random() * 12}s;
+      animation-delay: ${Math.random() * 10}s;
+      opacity: 0;
+      width: ${1 + Math.random() * 2}px;
+      height: ${1 + Math.random() * 2}px;
+    `;
+    canvas.appendChild(p);
+  }
+}
+spawnParticles();
+
+// ── Build grid
+function buildGrid() {
+  const g1 = document.getElementById('grid1');
+  const g2 = document.getElementById('grid2');
+  const g3 = document.getElementById('grid3');
+  MODES.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'mode-btn';
+    el.id = 'mode-' + m.id;
+    el.innerHTML = `
+      <div class="mode-icon"><i class="ti ${m.icon}" aria-hidden="true"></i></div>
+      <div class="mode-info">
+        <div class="mode-name">${m.name}</div>
+        <div class="mode-desc">${m.desc}</div>
+      </div>
+      <div class="mode-num">${String(m.id).padStart(2,'0')}</div>`;
+    el.onclick = () => selectMode(m);
+    if      (m.id <= 11) g1.appendChild(el);
+    else if (m.id <= 21) g2.appendChild(el);
+    else                 g3.appendChild(el);
+  });
+}
+
+function selectMode(m) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-' + m.id).classList.add('active');
+  selectedMode = m;
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = false;
+  document.getElementById('sendLabel').textContent = `SEND MODE_${String(m.id).padStart(2,'0')} · ${m.name.toUpperCase()}`;
+}
+
+// ── BLE
+function setConnected(val) {
+  connected = val;
+  const dot   = document.getElementById('bleDot');
+  const txt   = document.getElementById('bleText');
+  const badge = document.getElementById('bleBadge');
+  const bars  = document.getElementById('signalBars');
+  if (val) {
+    dot.className  = 'ble-dot connected';
+    txt.textContent = 'Terhubung';
+    badge.className = 'ble-badge connected';
+    bars.className  = 'signal-bars connected';
+    document.getElementById('deviceLabel').classList.remove('dim');
+  } else {
+    dot.className  = 'ble-dot';
+    txt.textContent = 'Hubungkan';
+    badge.className = 'ble-badge';
+    bars.className  = 'signal-bars';
+    document.getElementById('deviceLabel').textContent = 'Tidak terhubung';
+    document.getElementById('deviceLabel').classList.add('dim');
+  }
+}
+
+async function toggleBle() {
+  if (connected) { disconnectBle(); return; }
+  const dot   = document.getElementById('bleDot');
+  const txt   = document.getElementById('bleText');
+  const badge = document.getElementById('bleBadge');
+  dot.className  = 'ble-dot scanning';
+  txt.textContent = 'Mencari...';
+  badge.className = 'ble-badge scanning';
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'Flasher_BLE' }],
+      optionalServices: [SERVICE_UUID]
+    });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+    const server  = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    bleChar = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    setConnected(true);
+    document.getElementById('deviceLabel').textContent = bleDevice.name || 'Flasher_BLE';
+    showToast('✓ Terhubung ke ' + (bleDevice.name || 'Flasher_BLE'));
+  } catch(e) {
+    dot.className  = 'ble-dot';
+    txt.textContent = 'Hubungkan';
+    badge.className = 'ble-badge';
+    if (e.name !== 'NotFoundError') showToast('✕ ' + e.message);
+  }
+}
+
+function onDisconnected() {
+  bleChar = null;
+  setConnected(false);
+  document.getElementById('activeModeLabel').textContent = '—';
+  document.getElementById('activeModeLabel').classList.add('dim');
+  showToast('Koneksi terputus');
+}
+
+function disconnectBle() {
+  if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+}
+
+async function sendMode() {
+  if (!selectedMode) return;
+  if (!connected || !bleChar) { showToast('Hubungkan BLE dulu'); return; }
+  const cmd = 'MODE_' + selectedMode.id;
+  const btn = document.getElementById('sendBtn');
+  btn.classList.add('sending');
+  btn.disabled = true;
+  document.getElementById('sendLabel').textContent = 'Mengirim...';
+  try {
+    await bleChar.writeValue(new TextEncoder().encode(cmd));
+    const lbl = document.getElementById('activeModeLabel');
+    lbl.textContent = `${selectedMode.name.toUpperCase()} · ${cmd}`;
+    lbl.classList.remove('dim');
+    lbl.classList.add('active');
+    showToast(`✓ Terkirim: ${cmd}`);
+  } catch(e) {
+    showToast('✕ Gagal: ' + e.message);
+  }
+  setTimeout(() => {
+    btn.classList.remove('sending');
+    btn.disabled = false;
+    document.getElementById('sendLabel').textContent =
+      `SEND MODE_${String(selectedMode.id).padStart(2,'0')} · ${selectedMode.name.toUpperCase()}`;
+  }, 600);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+buildGrid();
+</script>
+</body>
+</html>
